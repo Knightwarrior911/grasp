@@ -19,6 +19,22 @@ It's a *best-of-both* synthesis of the three public computer-use designs, built 
 - **Perplexity computer** — the **governance verbs**: confirm before destructive actions,
   verify by screenshot, and first-class **app launch + shell** as actions, not afterthoughts.
 
+## Install (let your AI agent do it)
+
+Point Claude Code (or any coding agent) at this repo and say **"set this up"** — it reads
+[`AGENTS.md`](AGENTS.md) and installs + registers everything. Or run it yourself:
+
+```bash
+# Windows
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+# macOS / Linux (experimental — Grasp targets Windows)
+bash scripts/install.sh
+```
+
+Then restart Claude Code and ask it to "take a screenshot of my screen with Grasp." Grasp
+operates the **real, visible** desktop — you see the cursor move and actions happen live;
+there is no headless mode.
+
 ## Why a separate tool (and why Windows-native)
 
 Most computer-use stacks are POSIX-first and lean on `pyautogui` directly, which on Windows
