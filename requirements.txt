@@ -1,0 +1,9 @@
+mcp>=1.2.0
+mss>=9.0.0
+pyautogui>=0.9.54
+pillow>=10.0.0
+pyperclip>=1.8.0
+pygetwindow>=0.0.9
+# optional, enable extra capabilities:
+pydirectinput-rgx>=2.1.0   # SendInput/scancode backend for games & RDP (direct=True)
+pytesseract>=0.3.10        # find_text OCR (also needs a Tesseract-OCR install on PATH)
