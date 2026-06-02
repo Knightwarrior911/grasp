@@ -68,7 +68,7 @@ except Exception:
 from .scale import Scaler
 
 SETTLE = 1.0          # default seconds to let UI settle after an action before next screenshot
-TYPE_INTERVAL = 0.012 # ~12ms/char: fast but not so fast inputs drop chars
+TYPE_INTERVAL = 0.022 # ~22ms/char: fast but slow enough that focused apps don't drop chars
 BIG_TEXT = 200        # type_text over this length goes via clipboard paste
 
 

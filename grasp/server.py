@@ -150,7 +150,7 @@ def scroll(amount: int = 3, direction: str = "down", x: int | None = None,
 # --- keyboard --------------------------------------------------------------------------
 @mcp.tool()
 @tool
-def type_text(text: str, interval: float = 0.012):
+def type_text(text: str, interval: float = 0.022):
     """Type a string at the focused input. Long text auto-routes via clipboard paste."""
     return pc().type_text(text, interval=interval)
 
