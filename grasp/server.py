@@ -13,6 +13,7 @@ from .computer import Computer, SafetyError
 
 mcp = FastMCP("grasp")
 _pc = None
+_overlay = None
 
 
 def pc():
@@ -236,6 +237,45 @@ def find_text(query: str | None = None):
 def wait(seconds: float = 1.0):
     """Sleep for N seconds (let an app/page settle before the next screenshot)."""
     return pc().wait(seconds)
+
+
+@mcp.tool()
+@tool
+def watch_mode(on: bool = True, glide_seconds: float = 0.6, label: str | None = None):
+    """Turn on/off VISIBLE mode for watch-along / demos / screen recordings. When on, the
+    cursor GLIDES smoothly between points (instead of teleporting) and a glowing ring +
+    click ripples + an optional action label appear on screen so a human can follow every
+    step - like the Perplexity/Claude computer-use demo videos. Off restores fast motion.
+    Set `label` any time to narrate the current step."""
+    global _overlay
+    p = pc()
+    if on:
+        p.human = True
+        p.move_dur = glide_seconds
+        if _overlay is None:
+            from .overlay import Overlay
+            _overlay = Overlay().start()
+            p.on_click = lambda rx, ry: _overlay.ripple(rx, ry)
+        if label:
+            _overlay.label(label)
+        return {"watch_mode": "on", "glide_seconds": glide_seconds}
+    else:
+        p.human = False
+        p.on_click = None
+        if _overlay is not None:
+            _overlay.stop()
+            _overlay = None
+        return {"watch_mode": "off"}
+
+
+@mcp.tool()
+@tool
+def narrate(label: str):
+    """Show a short on-screen label of what the agent is about to do (only visible when
+    watch_mode is on). Use it to caption each step during a watch-along session."""
+    if _overlay is not None:
+        _overlay.label(label)
+    return {"label": label}
 
 
 def main():

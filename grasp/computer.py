@@ -77,11 +77,38 @@ class SafetyError(Exception):
 
 
 class Computer:
-    def __init__(self, settle=SETTLE, allow_destructive=False):
+    def __init__(self, settle=SETTLE, allow_destructive=False, human=False, move_dur=0.6):
         self.settle = settle
         self.allow_destructive = allow_destructive   # global override; per-call confirm also works
+        # human=True makes the cursor GLIDE between points (smooth, watchable - like a screen
+        # recording) instead of teleporting, with a brief hover before each click. Use it for
+        # demos / watch-along sessions; leave off for fast headless-style automation.
+        self.human = human
+        self.move_dur = move_dur
+        self.on_click = None          # optional callback(x_real, y_real) - e.g. overlay ripple
         self._sct = mss.mss()
         self._scaler = self._build_scaler()
+
+    # --- smooth motion -----------------------------------------------------------------
+    def _glide(self, rx, ry, dur=None):
+        """Move the real cursor from its current spot to (rx, ry) along an eased path so a
+        viewer can watch it travel. ~60 steps/sec, smoothstep ease-in-out."""
+        be = self._backend(False)
+        dur = self.move_dur if dur is None else dur
+        sx, sy = pyautogui.position()
+        steps = max(2, int(dur / 0.016))
+        for i in range(1, steps + 1):
+            t = i / steps
+            e = t * t * (3 - 2 * t)               # smoothstep
+            be.moveTo(round(sx + (rx - sx) * e), round(sy + (ry - sy) * e))
+            time.sleep(dur / steps)
+
+    def _goto(self, rx, ry, direct=False, glide=None):
+        """Position the cursor at real (rx, ry): glide if in human mode, else teleport."""
+        if (self.human if glide is None else glide):
+            self._glide(rx, ry)
+        else:
+            self._backend(direct).moveTo(rx, ry)
 
     # --- geometry ----------------------------------------------------------------------
     def _virtual_rect(self):
@@ -143,9 +170,12 @@ class Computer:
             raise RuntimeError("no input backend available (install pyautogui)")
         return be
 
-    def move(self, x, y, direct=False):
+    def move(self, x, y, direct=False, duration=None):
         rx, ry = self._to_real(x, y)
-        self._backend(direct).moveTo(rx, ry)
+        if duration is not None:
+            self._glide(rx, ry, duration)
+        else:
+            self._goto(rx, ry, direct)
         return self._settled({"moved": [x, y]})
 
     def _apply_keys(self, keys, down):
@@ -160,12 +190,20 @@ class Computer:
         be = self._backend(direct)
         if x is not None:
             rx, ry = self._to_real(x, y)
-            be.moveTo(rx, ry)
+            self._goto(rx, ry, direct)
+            if self.human:
+                time.sleep(0.18)                  # brief hover so a viewer sees the target
         self._apply_keys(keys, True)
         try:
             be.click(button=button, clicks=clicks)
         finally:
             self._apply_keys(keys, False)
+        if self.on_click:
+            try:
+                rx, ry = pyautogui.position()
+                self.on_click(rx, ry)
+            except Exception:
+                pass
         return self._settled({"clicked": [x, y], "button": button, "clicks": clicks})
 
     def double_click(self, x=None, y=None, button="left", keys=None, direct=False):
@@ -209,22 +247,42 @@ class Computer:
             be.mouseUp(button=button)
         return self._settled({"dragged": [[x1, y1], [x2, y2]], "button": button})
 
-    def drag_path(self, points, button="left", hold=0.0, direct=False):
-        """Freeform drag through model-space [[x,y],...] (OpenAI-style path drag)."""
+    def _drag_seg(self, rx, ry, dur=0.05):
+        """Interpolate the (button-held) cursor from its current spot to (rx, ry), so a drag
+        is one continuous motion the app samples fully (and a viewer can watch)."""
+        be = self._backend(False)
+        sx, sy = pyautogui.position()
+        steps = max(1, int(dur / 0.012))
+        for i in range(1, steps + 1):
+            t = i / steps
+            be.moveTo(round(sx + (rx - sx) * t), round(sy + (ry - sy) * t))
+            time.sleep(dur / steps)
+
+    def drag_path(self, points, button="left", hold=0.0, direct=False, seg_dur=None):
+        """Freeform drag through model-space [[x,y],...] (OpenAI-style path drag). In human
+        mode (or with seg_dur) each segment is interpolated for a smooth, watchable stroke."""
         if len(points) < 2:
             raise ValueError("drag_path needs >= 2 points")
         be = self._backend(direct)
-        start = self._to_real(*points[0])
-        be.moveTo(*start)
+        rsx, rsy = self._to_real(*points[0])
+        self._goto(rsx, rsy, direct)
+        time.sleep(0.06)                          # settle so the button-down lands here
         be.mouseDown(button=button)
+        time.sleep(0.05)                          # let the app register the stroke start
+        smooth = self.human or seg_dur
         try:
             for px, py in points[1:]:
                 rx, ry = self._to_real(px, py)
-                be.moveTo(rx, ry)
+                if smooth:
+                    self._drag_seg(rx, ry, seg_dur or 0.05)
+                else:
+                    be.moveTo(rx, ry)
                 if hold:
                     time.sleep(hold)
         finally:
+            time.sleep(0.05)
             be.mouseUp(button=button)
+            time.sleep(0.05)                      # ensure the release registers (no connecting line)
         return self._settled({"drag_path": len(points), "button": button})
 
     def scroll(self, amount=3, direction="down", x=None, y=None, dx=None, dy=None, direct=False):

@@ -86,6 +86,30 @@ FWXGA 1366x768, anything else -> long side capped at 1280).
 Every click/type takes optional held modifier `keys` and a `direct` SendInput flag. Click
 coordinates are optional — omit them to act at the current cursor position.
 
+## Watch-along (visible) mode
+
+By default Grasp moves the real cursor instantly - fine for automation, but hard for a human
+to follow (and on a remote screen it looks disconnected). `watch_mode(on=true)` switches to
+the look of the Perplexity / Claude / OpenAI computer-use demo videos: the cursor **glides
+smoothly** between points, a **glowing ring + crosshair** follows it, **click ripples** mark
+every click, and `narrate("...")` shows an on-screen label of the current step. It's a
+transparent, click-through, always-on-top overlay, so it never intercepts the input Grasp is
+sending. Turn it off to go back to fast motion.
+
+```python
+from grasp import Computer
+from grasp.overlay import Overlay
+ov = Overlay().start()
+c = Computer(human=True, move_dur=0.8)   # cursor glides; brief hover before each click
+c.on_click = ov.ripple                   # ripple on every click
+ov.label("Opening the deck")
+c.move(640, 400); c.click(300, 220)      # watch the ring glide + ripple
+ov.stop()
+```
+
+Over MCP it's two tools: `watch_mode(on=true, glide_seconds=0.6)` then `narrate("step")`
+before each action. See `examples/visible_demo.py`.
+
 ## Safety gates
 
 Grasp is built to be trusted on a real, working machine. Actions that can destroy work or
