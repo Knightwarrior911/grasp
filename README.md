@@ -93,6 +93,14 @@ tree -> elements with stable `ref`, name, role, value, model-space center) · `c
 (`ref`/`name` + text, via ValuePattern, type fallback) · `read_screen` (OCR the screen or a
 region to text). This is the reliable path: target controls by identity, not coordinates.
 
+**Verify after acting:** `assert_screen` (is this text on screen now?) · `wait_for_text` ·
+`wait_for_window` · `wait_for_element` — poll until the result of an action appears instead
+of sleeping a fixed time, so steps don't race.
+
+**System control (native APIs, not pixels):** `window` (activate / minimize / maximize /
+restore / close / move / resize) · `list_processes` · `process_running` · `kill_process`
+(**gated**) · `list_dir` · `file_read` · `file_write` (**gated**) · `file_search`.
+
 **Point:** `move` · `click` · `double_click` · `triple_click` · `right_click` · `middle_click`
 · `mouse_down` · `mouse_up` · `drag` · `drag_path` (freeform) · `scroll` (direction+amount or raw dx/dy)
 

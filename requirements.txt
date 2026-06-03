@@ -7,5 +7,6 @@ pygetwindow>=0.0.9
 # optional, enable extra capabilities:
 pydirectinput-rgx>=2.1.0   # SendInput/scancode backend for games & RDP (direct=True)
 pytesseract>=0.3.10        # find_text OCR (also needs a Tesseract-OCR install on PATH)
-uiautomation>=2.0.18       # locate() tier 1: Windows accessibility tree (exact, free)
-rapidocr-onnxruntime>=1.3  # locate() tier 2: on-screen OCR (offline, free; no Tesseract)
+uiautomation>=2.0.18       # locate()/snapshot tier 1: Windows accessibility tree (exact, free)
+rapidocr-onnxruntime>=1.3  # locate()/read_screen tier 2: on-screen OCR (offline, free; no Tesseract)
+psutil>=5.9                # system control: list/kill processes, process_running

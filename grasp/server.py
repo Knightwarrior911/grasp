@@ -8,10 +8,11 @@ import base64
 import functools
 import json
 import re
+import time
 
 from mcp.server.fastmcp import FastMCP
 
-from . import ground, vision
+from . import ground, system, vision
 from .computer import Computer, SafetyError
 
 mcp = FastMCP("grasp")
@@ -234,6 +235,133 @@ def read_screen(region: list | None = None):
     shot = pc().screenshot(tuple(region) if region else None)
     png = base64.b64decode(shot["image_b64"])
     return {"text": ground.ocr_text(png), "width": shot["width"], "height": shot["height"]}
+
+
+# --- verify after acting (W2): wait for state instead of guessing -----------------------
+@mcp.tool()
+@tool
+def assert_screen(text: str, region: list | None = None):
+    """True if `text` is visible on screen right now (local OCR, no vision tokens).
+    Use to branch instead of proceeding blindly. Returns {present}."""
+    shot = pc().screenshot(tuple(region) if region else None)
+    body = ground.ocr_text(base64.b64decode(shot["image_b64"]))
+    return {"present": text.lower() in body.lower(), "text": text}
+
+
+@mcp.tool()
+@tool
+def wait_for_text(text: str, timeout: float = 10.0, interval: float = 0.6,
+                  region: list | None = None):
+    """Poll the screen with OCR until `text` appears (or timeout). Use right after an
+    action to wait for its result instead of sleeping a fixed time. Returns
+    {found, waited_ms}."""
+    deadline = time.monotonic() + timeout
+    waited = 0.0
+    while True:
+        shot = pc().screenshot(tuple(region) if region else None)
+        body = ground.ocr_text(base64.b64decode(shot["image_b64"]))
+        if text.lower() in body.lower():
+            return {"found": True, "waited_ms": int(waited * 1000), "text": text}
+        if time.monotonic() >= deadline:
+            return {"found": False, "waited_ms": int(waited * 1000), "text": text}
+        time.sleep(interval)
+        waited += interval
+
+
+@mcp.tool()
+@tool
+def wait_for_window(title: str, timeout: float = 10.0, interval: float = 0.4):
+    """Poll until a window whose title contains `title` exists (e.g. after open_app).
+    Returns {found, waited_ms, match}."""
+    deadline = time.monotonic() + timeout
+    waited = 0.0
+    t = title.lower()
+    while True:
+        match = [x for x in system.window_titles() if t in x.lower()]
+        if match:
+            return {"found": True, "waited_ms": int(waited * 1000), "match": match[0]}
+        if time.monotonic() >= deadline:
+            return {"found": False, "waited_ms": int(waited * 1000)}
+        time.sleep(interval)
+        waited += interval
+
+
+@mcp.tool()
+@tool
+def wait_for_element(name: str, timeout: float = 10.0, interval: float = 0.5):
+    """Poll the foreground accessibility tree until an element whose name contains `name`
+    appears. Returns {found, waited_ms}."""
+    deadline = time.monotonic() + timeout
+    waited = 0.0
+    t = name.lower()
+    while True:
+        items = ground.snapshot_uia() or []
+        if any(t in (it.get("name") or "").lower() for it in items):
+            return {"found": True, "waited_ms": int(waited * 1000)}
+        if time.monotonic() >= deadline:
+            return {"found": False, "waited_ms": int(waited * 1000)}
+        time.sleep(interval)
+        waited += interval
+
+
+# --- system control (W3): native APIs beat pixels ---------------------------------------
+@mcp.tool()
+@tool
+def window(title: str, action: str, x: int | None = None, y: int | None = None,
+           w: int | None = None, h: int | None = None):
+    """Manage a window by title: action = activate | minimize | maximize | restore |
+    close | move | resize. `move` needs x,y; `resize` needs w,h."""
+    return system.window_action(title, action, x=x, y=y, w=w, h=h)
+
+
+@mcp.tool()
+@tool
+def list_processes(name: str | None = None):
+    """List running processes (optionally filtered by name substring). [{pid, name}]."""
+    return {"processes": system.list_processes(name)}
+
+
+@mcp.tool()
+@tool
+def process_running(name: str):
+    """True if a process whose name contains `name` is running."""
+    return {"running": system.process_running(name)}
+
+
+@mcp.tool()
+@tool
+def kill_process(pid: int | None = None, name: str | None = None, confirm: bool = False):
+    """Terminate a process by pid or name. DESTRUCTIVE: re-issue with confirm=True."""
+    return system.kill_process(pid=pid, name=name, confirm=confirm)
+
+
+@mcp.tool()
+@tool
+def list_dir(path: str):
+    """List a directory's entries (or report a file's size)."""
+    return system.list_dir(path)
+
+
+@mcp.tool()
+@tool
+def file_read(path: str, max_bytes: int = 20000):
+    """Read a text file (truncated to max_bytes)."""
+    return system.file_read(path, max_bytes)
+
+
+@mcp.tool()
+@tool
+def file_write(path: str, content: str, confirm: bool = False, append: bool = False):
+    """Write text to a file. Overwriting an existing file needs confirm=True (append=True
+    to add to the end). DESTRUCTIVE when overwriting."""
+    return system.file_write(path, content, confirm=confirm, append=append)
+
+
+@mcp.tool()
+@tool
+def file_search(root: str, pattern: str):
+    """Find files matching a glob `pattern` (e.g. *.pdf) under `root`."""
+    return system.file_search(root, pattern)
 
 
 # --- pointer ---------------------------------------------------------------------------
