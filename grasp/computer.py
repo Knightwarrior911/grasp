@@ -163,6 +163,11 @@ class Computer:
         mx, my = self._scaler.to_model(x - left, y - top)
         return {"model": [mx, my], "real": [x, y]}
 
+    def real_to_model(self, rx, ry):
+        """Map an absolute physical-pixel point to model-space coordinates."""
+        left, top, _, _ = self._virtual_rect()
+        return self._scaler.to_model(rx - left, ry - top)
+
     # --- pointer -----------------------------------------------------------------------
     def _backend(self, direct):
         be = pydirectinput if (direct and pydirectinput) else pyautogui

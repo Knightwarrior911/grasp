@@ -72,11 +72,20 @@ FWXGA 1366x768, anything else -> long side capped at 1280).
 
 **Perceive:** `screenshot` (whole screen or a region) · `screen_size` · `cursor_position`
 
-**See without spending agent vision (off-cap):** `see` (ask a question about the current
-screen) · `locate` (get click coordinates for a described element). Grasp captures the
-screen and a separate vision model (MiniMax, off the Anthropic cap) interprets it, so the
-screenshot never enters the calling agent's context, the agent just calls `click(x, y)`.
-Set `MINIMAX_API_KEY` (or the Claude-NIM auth file) to enable; falls back cleanly if absent.
+**See without spending agent vision:** `see` (ask a question about the current screen) ·
+`locate` (get click coordinates for a described element). The screenshot never enters the
+calling agent's context, so it costs no agent vision tokens; the agent just calls
+`click(x, y)`.
+
+`locate` resolves a target through three tiers, cheapest first:
+1. **Windows UI Automation tree** (`uiautomation`) — exact element rect, instant, free, offline.
+2. **OCR** of on-screen text (`rapidocr-onnxruntime`) — free, offline, no Tesseract needed.
+3. **MiniMax VLM** — off the Anthropic 5h cap, as a last resort; set `MINIMAX_API_KEY`
+   (or the Claude-NIM auth file).
+
+The reply includes `method` (`uia` / `ocr` / `minimax`) so you can see which tier hit.
+Each tier is optional and skipped cleanly if its library/key is absent. `see` uses the
+MiniMax tier.
 
 **Point:** `move` · `click` · `double_click` · `triple_click` · `right_click` · `middle_click`
 · `mouse_down` · `mouse_up` · `drag` · `drag_path` (freeform) · `scroll` (direction+amount or raw dx/dy)

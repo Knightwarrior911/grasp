@@ -11,7 +11,7 @@ import re
 
 from mcp.server.fastmcp import FastMCP
 
-from . import vision
+from . import ground, vision
 from .computer import Computer, SafetyError
 
 mcp = FastMCP("grasp")
@@ -111,23 +111,49 @@ def see(question: str):
 @tool
 def locate(target: str):
     """Find the on-screen element described by `target` and return click coordinates in
-    MODEL space, WITHOUT sending the screenshot to the calling agent (off-cap MiniMax
-    vision -> no Anthropic tokens). Returns {found, x, y}. Then call click(x, y).
-    Prefer this over screenshot+reason when you just need to click something."""
-    if not vision.is_available():
-        raise vision.VisionError(
-            "MiniMax key not found; set MINIMAX_API_KEY or the Claude-NIM auth file.")
+    MODEL space, cheaply and WITHOUT sending the screenshot to the calling agent. Tries,
+    in order: the Windows accessibility tree (free, exact, instant), then OCR of on-screen
+    text (free, offline), then an off-cap vision model (MiniMax) as a fallback. Returns
+    {found, x, y, method}. Then call click(x, y). Prefer this over screenshot+reason."""
     shot = pc().screenshot()
     png = base64.b64decode(shot["image_b64"])
     w, h = shot["width"], shot["height"]
-    prompt = (
-        f"The image is a {w}x{h} pixel screenshot (origin top-left). "
-        f'Find: "{target}". Reply with ONLY compact JSON and no other text: '
-        f'{{"found": true, "x": <int>, "y": <int>}} giving the pixel coordinates of the '
-        f'CENTER of the best-matching clickable element, or {{"found": false}} if it is '
-        f"not visible.")
-    raw = vision.vlm(prompt, png)
-    return {"target": target, "width": w, "height": h, **_parse_xy(raw, w, h)}
+
+    def clamp(x, y, method):
+        return {"target": target, "found": True,
+                "x": max(0, min(int(x), w - 1)), "y": max(0, min(int(y), h - 1)),
+                "method": method, "width": w, "height": h}
+
+    # Tier 1: UI Automation tree (exact element rect, instant, $0)
+    try:
+        u = ground.locate_uia(target)
+        if u:
+            mx, my = pc().real_to_model(u[0], u[1])
+            return clamp(mx, my, "uia")
+    except Exception:
+        pass
+
+    # Tier 2: OCR on the model-space screenshot (free, offline)
+    try:
+        o = ground.locate_ocr(png, target)
+        if o:
+            return clamp(o[0], o[1], "ocr")
+    except Exception:
+        pass
+
+    # Tier 3: off-cap MiniMax vision (last resort)
+    if vision.is_available():
+        prompt = (
+            f"The image is a {w}x{h} pixel screenshot (origin top-left). "
+            f'Find: "{target}". Reply with ONLY compact JSON and no other text: '
+            f'{{"found": true, "x": <int>, "y": <int>}} giving the pixel coordinates of the '
+            f'CENTER of the best-matching clickable element, or {{"found": false}} if it is '
+            f"not visible.")
+        raw = vision.vlm(prompt, png)
+        return {"target": target, "method": "minimax", "width": w, "height": h,
+                **_parse_xy(raw, w, h)}
+
+    return {"target": target, "found": False, "method": "none", "width": w, "height": h}
 
 
 # --- pointer ---------------------------------------------------------------------------
