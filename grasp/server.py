@@ -12,7 +12,7 @@ import time
 
 from mcp.server.fastmcp import FastMCP
 
-from . import ground, system, vision
+from . import extras, ground, macros, system, vision
 from .computer import Computer, SafetyError
 
 mcp = FastMCP("grasp")
@@ -362,6 +362,104 @@ def file_write(path: str, content: str, confirm: bool = False, append: bool = Fa
 def file_search(root: str, pattern: str):
     """Find files matching a glob `pattern` (e.g. *.pdf) under `root`."""
     return system.file_search(root, pattern)
+
+
+# --- W4: voice, notifications, media, monitors, macros ----------------------------------
+@mcp.tool()
+@tool
+def speak(text: str, rate: int | None = None):
+    """Speak text aloud via offline TTS (SAPI). Pairs with voice input for a hands-free
+    loop. `rate` is words-per-minute (default voice speed)."""
+    return extras.speak(text, rate)
+
+
+@mcp.tool()
+@tool
+def notify(title: str, message: str):
+    """Show a Windows notification (Action Center toast). Use to flag completion or ask
+    for attention without stealing focus."""
+    return extras.notify(title, message)
+
+
+@mcp.tool()
+@tool
+def volume(level: float | None = None, mute: bool | None = None):
+    """Get or set the system volume. `level` is 0.0-1.0; `mute` toggles. Omit both to read
+    the current state. Returns {level, muted}."""
+    return extras.volume(level=level, mute=mute)
+
+
+@mcp.tool()
+@tool
+def media(action: str):
+    """Send a media key: play_pause | next | prev | stop | vol_up | vol_down | mute."""
+    return extras.media(action)
+
+
+@mcp.tool()
+@tool
+def brightness(level: int | None = None):
+    """Get or set screen brightness (0-100). Omit `level` to read it."""
+    return extras.brightness(level)
+
+
+@mcp.tool()
+@tool
+def list_monitors():
+    """List monitors with their position and size (index 1..N; 0 is the virtual desktop)."""
+    return extras.list_monitors()
+
+
+@mcp.tool()
+@tool
+def screenshot_monitor(index: int, max_side: int = 1280):
+    """Capture one monitor (1-based) as a base64 PNG, downscaled to max_side."""
+    return extras.screenshot_monitor(index, max_side)
+
+
+@mcp.tool()
+@tool
+def macro_save(name: str, steps: list):
+    """Save a replayable macro. steps = [{action, args}] where action is a Computer verb
+    (click, type_text, key, scroll, drag, open_app) or "sleep" ({seconds}); coordinates
+    are model-space. Replay with macro_run."""
+    return macros.save(name, steps)
+
+
+@mcp.tool()
+@tool
+def macro_run(name: str):
+    """Replay a saved macro step by step. Returns per-step results."""
+    return macros.run(name, pc())
+
+
+@mcp.tool()
+@tool
+def macro_list():
+    """List saved macro names."""
+    return {"macros": macros.list_macros()}
+
+
+@mcp.tool()
+@tool
+def macro_delete(name: str):
+    """Delete a saved macro."""
+    return {"deleted": macros.delete(name)}
+
+
+@mcp.tool()
+@tool
+def macro_record_start(name: str):
+    """Start recording real mouse clicks + keystrokes into a named macro (pynput).
+    Stop with macro_record_stop. Coordinates are captured in model space."""
+    return macros.record_start(name, pc())
+
+
+@mcp.tool()
+@tool
+def macro_record_stop():
+    """Stop recording and save the macro (inter-event gaps become sleeps)."""
+    return macros.record_stop()
 
 
 # --- pointer ---------------------------------------------------------------------------

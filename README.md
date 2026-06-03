@@ -101,6 +101,17 @@ of sleeping a fixed time, so steps don't race.
 restore / close / move / resize) · `list_processes` · `process_running` · `kill_process`
 (**gated**) · `list_dir` · `file_read` · `file_write` (**gated**) · `file_search`.
 
+**Voice & alerts:** `speak` (offline TTS) · `notify` (Action Center toast).
+
+**Media & display:** `media` (play_pause / next / prev / vol_up / vol_down / mute) ·
+`volume` (get/set 0-1, mute) · `brightness` (get/set 0-100) · `list_monitors` ·
+`screenshot_monitor`.
+
+**Macros (remember & replay):** `macro_save` / `macro_run` / `macro_list` / `macro_delete`
+(compose a step sequence), plus `macro_record_start` / `macro_record_stop` to capture real
+mouse + keyboard input (model-space) into a replayable macro. Saved under
+`%LOCALAPPDATA%/Grasp/macros`.
+
 **Point:** `move` · `click` · `double_click` · `triple_click` · `right_click` · `middle_click`
 · `mouse_down` · `mouse_up` · `drag` · `drag_path` (freeform) · `scroll` (direction+amount or raw dx/dy)
 
