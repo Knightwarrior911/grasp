@@ -72,6 +72,12 @@ FWXGA 1366x768, anything else -> long side capped at 1280).
 
 **Perceive:** `screenshot` (whole screen or a region) · `screen_size` · `cursor_position`
 
+**See without spending agent vision (off-cap):** `see` (ask a question about the current
+screen) · `locate` (get click coordinates for a described element). Grasp captures the
+screen and a separate vision model (MiniMax, off the Anthropic cap) interprets it, so the
+screenshot never enters the calling agent's context, the agent just calls `click(x, y)`.
+Set `MINIMAX_API_KEY` (or the Claude-NIM auth file) to enable; falls back cleanly if absent.
+
 **Point:** `move` · `click` · `double_click` · `triple_click` · `right_click` · `middle_click`
 · `mouse_down` · `mouse_up` · `drag` · `drag_path` (freeform) · `scroll` (direction+amount or raw dx/dy)
 

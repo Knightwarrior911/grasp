@@ -4,11 +4,14 @@ Every tool returns a small JSON dict. Screenshots return base64 PNG plus the mod
 dimensions, so the calling agent knows the coordinate space it must click in. The agent
 loop is: screenshot -> reason in model space -> act -> screenshot to verify."""
 
+import base64
 import functools
 import json
+import re
 
 from mcp.server.fastmcp import FastMCP
 
+from . import vision
 from .computer import Computer, SafetyError
 
 mcp = FastMCP("grasp")
@@ -61,6 +64,70 @@ def screen_size():
 def cursor_position():
     """Current mouse position in both model and real pixel coordinates."""
     return pc().cursor_position()
+
+
+def _parse_xy(raw: str, w: int, h: int):
+    """Pull {found,x,y} out of a vision model's reply, clamped to the image."""
+    def clamp(x, y):
+        return {"found": True,
+                "x": max(0, min(int(round(float(x))), w - 1)),
+                "y": max(0, min(int(round(float(y))), h - 1))}
+    m = re.search(r"\{[^{}]*\}", raw or "", re.DOTALL)
+    if m:
+        try:
+            d = json.loads(m.group(0))
+            if d.get("found") and d.get("x") is not None and d.get("y") is not None:
+                return clamp(d["x"], d["y"])
+            if d.get("found") is False:
+                return {"found": False}
+        except Exception:
+            pass
+    if raw and "false" not in raw.lower():
+        nums = re.findall(r"-?\d+(?:\.\d+)?", raw)
+        if len(nums) >= 2:
+            return clamp(nums[0], nums[1])
+    return {"found": False}
+
+
+@mcp.tool()
+@tool
+def see(question: str):
+    """Answer a question about the CURRENT screen WITHOUT sending the screenshot to the
+    calling agent. Grasp captures the screen and an off-cap vision model (MiniMax)
+    interprets it, so this costs no Anthropic tokens. Returns {answer, width, height}.
+    Use this instead of screenshot() whenever you only need to KNOW something on screen."""
+    if not vision.is_available():
+        raise vision.VisionError(
+            "MiniMax key not found; set MINIMAX_API_KEY or the Claude-NIM auth file.")
+    shot = pc().screenshot()
+    png = base64.b64decode(shot["image_b64"])
+    prompt = (f"You are looking at a {shot['width']}x{shot['height']} screenshot of a "
+              f"computer screen. {question}")
+    return {"answer": vision.vlm(prompt, png),
+            "width": shot["width"], "height": shot["height"]}
+
+
+@mcp.tool()
+@tool
+def locate(target: str):
+    """Find the on-screen element described by `target` and return click coordinates in
+    MODEL space, WITHOUT sending the screenshot to the calling agent (off-cap MiniMax
+    vision -> no Anthropic tokens). Returns {found, x, y}. Then call click(x, y).
+    Prefer this over screenshot+reason when you just need to click something."""
+    if not vision.is_available():
+        raise vision.VisionError(
+            "MiniMax key not found; set MINIMAX_API_KEY or the Claude-NIM auth file.")
+    shot = pc().screenshot()
+    png = base64.b64decode(shot["image_b64"])
+    w, h = shot["width"], shot["height"]
+    prompt = (
+        f"The image is a {w}x{h} pixel screenshot (origin top-left). "
+        f'Find: "{target}". Reply with ONLY compact JSON and no other text: '
+        f'{{"found": true, "x": <int>, "y": <int>}} giving the pixel coordinates of the '
+        f'CENTER of the best-matching clickable element, or {{"found": false}} if it is '
+        f"not visible.")
+    raw = vision.vlm(prompt, png)
+    return {"target": target, "width": w, "height": h, **_parse_xy(raw, w, h)}
 
 
 # --- pointer ---------------------------------------------------------------------------
