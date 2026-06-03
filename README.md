@@ -87,6 +87,12 @@ The reply includes `method` (`uia` / `ocr` / `minimax`) so you can see which tie
 Each tier is optional and skipped cleanly if its library/key is absent. `see` uses the
 MiniMax tier.
 
+**Act on elements, not pixels (free, exact):** `snapshot` (the foreground window's UIA
+tree -> elements with stable `ref`, name, role, value, model-space center) · `click_element`
+(`ref` or `name`, via the accessibility Invoke action, pixel-click fallback) · `set_value`
+(`ref`/`name` + text, via ValuePattern, type fallback) · `read_screen` (OCR the screen or a
+region to text). This is the reliable path: target controls by identity, not coordinates.
+
 **Point:** `move` · `click` · `double_click` · `triple_click` · `right_click` · `middle_click`
 · `mouse_down` · `mouse_up` · `drag` · `drag_path` (freeform) · `scroll` (direction+amount or raw dx/dy)
 

@@ -156,6 +156,86 @@ def locate(target: str):
     return {"target": target, "found": False, "method": "none", "width": w, "height": h}
 
 
+@mcp.tool()
+@tool
+def snapshot():
+    """List the interactive elements of the FOREGROUND window from the Windows
+    accessibility (UIA) tree: each gets a stable `ref`, plus name, role, enabled, value,
+    and its model-space center (x, y). Then act with click_element(ref) / set_value(ref,
+    text) - element actions are far more reliable than blind pixel clicks, and free (no
+    vision tokens). Re-run snapshot after the UI changes to refresh refs."""
+    items = ground.snapshot_uia()
+    if items is None:
+        return {"available": False,
+                "hint": "pip install uiautomation to enable element control"}
+    out = []
+    for it in items:
+        left, top, right, bottom = it.pop("_rect")
+        cx, cy = pc().real_to_model((left + right) // 2, (top + bottom) // 2)
+        it["x"], it["y"] = int(cx), int(cy)
+        out.append(it)
+    return {"count": len(out), "elements": out}
+
+
+def _resolve_ctrl(ref, name):
+    if ref:
+        return ground.registry_get(ref)
+    if name:
+        return ground.find_ctrl(name)
+    return None
+
+
+@mcp.tool()
+@tool
+def click_element(ref: str | None = None, name: str | None = None, button: str = "left"):
+    """Click a UI element by `ref` (from snapshot) or by `name`, using the accessibility
+    Invoke/Toggle action when available (more reliable than a pixel click), otherwise a
+    center click. Run snapshot() first to get refs. Returns {found, method, x, y}."""
+    ctrl = _resolve_ctrl(ref, name)
+    if ctrl is None:
+        return {"found": False, "hint": "run snapshot() first, or check ref/name"}
+    if button == "left" and ground.invoke_ctrl(ctrl):
+        return {"found": True, "method": "uia-invoke"}
+    center = ground.ctrl_center_real(ctrl)
+    if not center:
+        return {"found": False}
+    mx, my = pc().real_to_model(center[0], center[1])
+    pc().click(int(mx), int(my), button=button)
+    return {"found": True, "method": "click", "x": int(mx), "y": int(my)}
+
+
+@mcp.tool()
+@tool
+def set_value(text: str, ref: str | None = None, name: str | None = None):
+    """Set a text field / combo value by `ref` or `name` using the accessibility
+    ValuePattern (atomic and reliable), falling back to click + type. Run snapshot()
+    first. Returns {found, method}."""
+    ctrl = _resolve_ctrl(ref, name)
+    if ctrl is None:
+        return {"found": False, "hint": "run snapshot() first, or check ref/name"}
+    if ground.set_value_ctrl(ctrl, text):
+        return {"found": True, "method": "uia-setvalue"}
+    center = ground.ctrl_center_real(ctrl)
+    if not center:
+        return {"found": False}
+    mx, my = pc().real_to_model(center[0], center[1])
+    p = pc()
+    p.click(int(mx), int(my))
+    p.type_text(text)
+    return {"found": True, "method": "type", "x": int(mx), "y": int(my)}
+
+
+@mcp.tool()
+@tool
+def read_screen(region: list | None = None):
+    """OCR the screen (or a model-space [x, y, w, h] region) to plain text, locally and
+    free (no vision tokens). Use to READ content without sending a screenshot to the
+    agent. Returns {text, width, height}."""
+    shot = pc().screenshot(tuple(region) if region else None)
+    png = base64.b64decode(shot["image_b64"])
+    return {"text": ground.ocr_text(png), "width": shot["width"], "height": shot["height"]}
+
+
 # --- pointer ---------------------------------------------------------------------------
 @mcp.tool()
 @tool

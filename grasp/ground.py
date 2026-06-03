@@ -97,6 +97,154 @@ def locate_uia(target: str):
     return best[2] if best else None
 
 
+# --- element control: snapshot the accessibility tree, act on elements by ref -------
+_REGISTRY = {}  # ref -> uiautomation Control (valid until the next snapshot)
+_INTERESTING = _CLICKABLE | {
+    "ComboBoxControl", "RadioButtonControl", "MenuItemControl", "SliderControl",
+    "TreeItemControl", "DataItemControl", "HeaderItemControl", "WindowControl",
+}
+
+
+def _value_of(ctrl) -> str:
+    try:
+        g = getattr(ctrl, "GetValuePattern", None)
+        if g:
+            vp = g()
+            return (vp.Value or "") if vp else ""
+    except Exception:
+        pass
+    return ""
+
+
+def snapshot_uia(max_nodes: int = 700):
+    """Walk the foreground window's UIA tree -> list of interactive elements.
+
+    Returns [{ref, name, role, enabled, value, _rect(physical px)}] and stashes the
+    live controls in a registry keyed by ref. None if uiautomation is unavailable.
+    """
+    try:
+        import uiautomation as auto
+    except Exception:
+        return None
+    hwnd = _foreground_hwnd()
+    try:
+        root = auto.ControlFromHandle(hwnd) if hwnd else auto.GetRootControl()
+    except Exception:
+        root = None
+    if root is None:
+        return []
+    _REGISTRY.clear()
+    items, stack, seen, seq = [], [(root, 0)], 0, 0
+    while stack and seen < max_nodes:
+        ctrl, depth = stack.pop()
+        seen += 1
+        try:
+            children = ctrl.GetChildren() if depth < 20 else []
+        except Exception:
+            children = []
+        for ch in reversed(children):
+            stack.append((ch, depth + 1))
+        try:
+            name = ctrl.Name or ""
+            ctype = ctrl.ControlTypeName
+            r = ctrl.BoundingRectangle
+        except Exception:
+            continue
+        if (r.right - r.left) <= 0 or (r.bottom - r.top) <= 0:
+            continue
+        if ctype not in _INTERESTING and not name.strip():
+            continue
+        seq += 1
+        ref = f"e{seq}"
+        _REGISTRY[ref] = ctrl
+        items.append({"ref": ref, "name": name[:100],
+                      "role": ctype.replace("Control", ""),
+                      "enabled": bool(getattr(ctrl, "IsEnabled", True)),
+                      "value": _value_of(ctrl)[:100],
+                      "_rect": [r.left, r.top, r.right, r.bottom]})
+    return items
+
+
+def registry_get(ref: str):
+    return _REGISTRY.get(ref)
+
+
+def find_ctrl(name: str):
+    """First registry control whose name contains `name` (case-insensitive)."""
+    t = (name or "").strip().lower()
+    if not t:
+        return None
+    for ctrl in _REGISTRY.values():
+        try:
+            if t in (ctrl.Name or "").lower():
+                return ctrl
+        except Exception:
+            continue
+    return None
+
+
+def invoke_ctrl(ctrl) -> bool:
+    """Fire the most appropriate accessibility action; True if one succeeded."""
+    for getter, method in (("GetInvokePattern", "Invoke"),
+                           ("GetTogglePattern", "Toggle"),
+                           ("GetExpandCollapsePattern", "Expand"),
+                           ("GetSelectionItemPattern", "Select")):
+        try:
+            g = getattr(ctrl, getter, None)
+            if g:
+                p = g()
+                if p:
+                    getattr(p, method)()
+                    return True
+        except Exception:
+            continue
+    return False
+
+
+def set_value_ctrl(ctrl, text: str) -> bool:
+    try:
+        g = getattr(ctrl, "GetValuePattern", None)
+        if g:
+            p = g()
+            if p:
+                p.SetValue(text)
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def ctrl_center_real(ctrl):
+    try:
+        r = ctrl.BoundingRectangle
+        return ((r.left + r.right) // 2, (r.top + r.bottom) // 2)
+    except Exception:
+        return None
+
+
+def ocr_text(model_png: bytes) -> str:
+    """Full OCR text of an image, in rough reading order (top-to-bottom)."""
+    try:
+        import numpy as np
+        from PIL import Image
+        engine = _ocr()
+    except Exception:
+        return ""
+    try:
+        img = Image.open(io.BytesIO(model_png)).convert("RGB")
+        result, _ = engine(np.array(img)[:, :, ::-1])
+    except Exception:
+        return ""
+    if not result:
+        return ""
+    rows = []
+    for box, text, _conf in result:
+        ys = [p[1] for p in box]
+        rows.append((min(ys), text))
+    rows.sort(key=lambda r: r[0])
+    return "\n".join(t for _, t in rows)
+
+
 _ocr_engine = None
 
 
