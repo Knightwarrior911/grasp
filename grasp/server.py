@@ -540,10 +540,12 @@ def drag_path(points: list, button: str = "left", hold: float = 0.0):
 @mcp.tool()
 @tool
 def scroll(amount: int = 3, direction: str = "down", x: int | None = None,
-           y: int | None = None, dx: int | None = None, dy: int | None = None):
+           y: int | None = None, dx: int | None = None, dy: int | None = None,
+           keys: list | None = None):
     """Scroll. Either direction (up|down|left|right) + amount, or raw dx/dy deltas.
-    Optionally move to (x, y) first to scroll over a specific pane."""
-    return pc().scroll(amount=amount, direction=direction, x=x, y=y, dx=dx, dy=dy)
+    Optionally move to (x, y) first to scroll over a specific pane. `keys` holds
+    modifiers around the wheel, e.g. keys=['ctrl'] for zoom / pinch-to-zoom."""
+    return pc().scroll(amount=amount, direction=direction, x=x, y=y, dx=dx, dy=dy, keys=keys)
 
 
 # --- keyboard --------------------------------------------------------------------------
@@ -629,6 +631,37 @@ def find_text(query: str | None = None):
     Best-effort: requires pytesseract + a Tesseract install; reports clearly if missing.
     Use as a fallback to locate a label when you can't fix a coordinate from the screenshot."""
     return pc().find_text(query)
+
+
+@mcp.tool()
+@tool
+def click_text(query: str, occurrence: int = 1, button: str = "left", clicks: int = 1,
+               whole: bool = False, keys: list | None = None):
+    """Click on-screen TEXT by its label instead of guessing pixel coordinates — the
+    reliable way to hit small/crowded targets (toolbar buttons, sidebar tabs, menu items,
+    list rows). OCRs the screen, finds `query` (multi-word queries match a run of words on
+    one line, so 'Save copy' / 'Find all' work), and clicks the match's center. `occurrence`
+    picks the Nth match in reading order; `whole` requires an exact word; `keys` holds
+    modifiers. Prefer this over screenshot->estimate-coordinate->click."""
+    return pc().click_text(query, occurrence=occurrence, button=button, clicks=clicks,
+                           whole=whole, keys=keys)
+
+
+@mcp.tool()
+@tool
+def locate_text(query: str, occurrence: int = 1, whole: bool = False):
+    """Model-space center of on-screen text matching `query`, WITHOUT clicking (multi-word
+    aware, `occurrence` = Nth match). Use to read a target's coordinates precisely."""
+    return pc().locate_text(query, occurrence=occurrence, whole=whole)
+
+
+@mcp.tool()
+@tool
+def hover(x: int, y: int):
+    """Move the cursor to (x, y) and jiggle a pixel so a real OS mouse-move fires —
+    triggers hover / mouseenter UI (tooltips, pop-up HUDs, menus) even in web views, where a
+    plain move() (SetCursorPos) does not dispatch a DOM mousemove."""
+    return pc().hover(x, y)
 
 
 @mcp.tool()

@@ -72,6 +72,40 @@ TYPE_INTERVAL = 0.022 # ~22ms/char: fast but slow enough that focused apps don't
 BIG_TEXT = 200        # type_text over this length goes via clipboard paste
 
 
+def text_candidates(words, query, whole=False):
+    """Find on-screen-text candidates for `query` among OCR `words` (each a dict with
+    t,l,tp,w,h,key,wn). Multi-word queries match a consecutive run of words on one OCR line
+    (key=block/par/line). Returns candidates sorted in reading order as
+    [(top, left, (x0,y0,x1,y1), text)]. Pure, so it is unit-testable without a screen."""
+    qt = query.strip().lower().split()
+    cands = []
+    if len(qt) <= 1:
+        ql = query.strip().lower()
+        for wd in words:
+            wl = wd["t"].lower()
+            if (whole and wl == ql) or (not whole and ql and ql in wl):
+                cands.append((wd["tp"], wd["l"],
+                              (wd["l"], wd["tp"], wd["l"] + wd["w"], wd["tp"] + wd["h"]), wd["t"]))
+    else:
+        from collections import defaultdict
+        lines = defaultdict(list)
+        for wd in words:
+            lines[wd["key"]].append(wd)
+        for ws in lines.values():
+            ws.sort(key=lambda d: d["wn"])
+            toks = [d["t"].lower() for d in ws]
+            for s in range(0, len(ws) - len(qt) + 1):
+                seg = toks[s:s + len(qt)]
+                ok = all((qt[j] == seg[j]) if whole else (qt[j] in seg[j]) for j in range(len(qt)))
+                if ok:
+                    g = ws[s:s + len(qt)]
+                    x0 = min(d["l"] for d in g); y0 = min(d["tp"] for d in g)
+                    x1 = max(d["l"] + d["w"] for d in g); y1 = max(d["tp"] + d["h"] for d in g)
+                    cands.append((y0, x0, (x0, y0, x1, y1), " ".join(d["t"] for d in g)))
+    cands.sort(key=lambda c: (c[0], c[1]))   # reading order: top-to-bottom, left-to-right
+    return cands
+
+
 class SafetyError(Exception):
     """Raised when a destructive action is attempted without confirm=True."""
 
@@ -290,25 +324,31 @@ class Computer:
             time.sleep(0.05)                      # ensure the release registers (no connecting line)
         return self._settled({"drag_path": len(points), "button": button})
 
-    def scroll(self, amount=3, direction="down", x=None, y=None, dx=None, dy=None, direct=False):
-        """Scroll by clicks. direction+amount OR raw dx/dy (dy>0 = up, like pyautogui)."""
+    def scroll(self, amount=3, direction="down", x=None, y=None, dx=None, dy=None,
+               keys=None, direct=False):
+        """Scroll by clicks. direction+amount OR raw dx/dy (dy>0 = up, like pyautogui).
+        `keys` holds modifiers around the wheel (e.g. ['ctrl'] for zoom / pinch)."""
         be = self._backend(direct)
         if x is not None and y is not None:
             rx, ry = self._to_real(x, y)
             be.moveTo(rx, ry)
-        if dy is not None or dx is not None:
-            if dy:
-                be.scroll(int(dy))
-            if dx and hasattr(be, "hscroll"):
-                be.hscroll(int(dx))
-            return self._settled({"scroll": {"dx": dx, "dy": dy}})
-        clicks = abs(int(amount))
-        clicks = clicks if direction in ("up", "right") else -clicks
-        if direction in ("up", "down"):
-            be.scroll(clicks)
-        elif hasattr(be, "hscroll"):
-            be.hscroll(clicks)
-        return self._settled({"scroll": {"direction": direction, "amount": amount}})
+        self._apply_keys(keys, True)
+        try:
+            if dy is not None or dx is not None:
+                if dy:
+                    be.scroll(int(dy))
+                if dx and hasattr(be, "hscroll"):
+                    be.hscroll(int(dx))
+                return self._settled({"scroll": {"dx": dx, "dy": dy}, "keys": keys})
+            clicks = abs(int(amount))
+            clicks = clicks if direction in ("up", "right") else -clicks
+            if direction in ("up", "down"):
+                be.scroll(clicks)
+            elif hasattr(be, "hscroll"):
+                be.hscroll(clicks)
+            return self._settled({"scroll": {"direction": direction, "amount": amount}, "keys": keys})
+        finally:
+            self._apply_keys(keys, False)
 
     # --- keyboard ----------------------------------------------------------------------
     DESTRUCTIVE_KEYS = {"delete", "del"}
@@ -316,14 +356,29 @@ class Computer:
     def type_text(self, text, interval=TYPE_INTERVAL, direct=False, confirm=False):
         if not text:
             return {"typed": 0}
-        # Big text -> clipboard paste (orders of magnitude faster, no dropped chars)
-        if len(text) >= BIG_TEXT and pyperclip is not None:
+        # Route via clipboard paste for long text OR anything containing a space:
+        # char-by-char typewrite silently drops spaces in some apps and web views
+        # (e.g. QtWebEngine inputs), so "Stock Options" arrived as "StockOptions".
+        # Paste is reliable; the prior clipboard is restored afterwards.
+        if pyperclip is not None and (len(text) >= BIG_TEXT or " " in text):
+            prev = None
+            try:
+                prev = pyperclip.paste()
+            except Exception:
+                pass
             pyperclip.copy(text)
             be = self._backend(False)
             be.hotkey("ctrl", "v")
-            return self._settled({"typed": len(text), "via": "paste"})
+            res = self._settled({"typed": len(text), "via": "paste"})
+            if prev is not None:
+                try:
+                    time.sleep(0.05)
+                    pyperclip.copy(prev)
+                except Exception:
+                    pass
+            return res
         be = self._backend(direct)
-        be.typewrite(text, interval=interval) if be is pyautogui else be.typewrite(text, interval=interval)
+        be.typewrite(text, interval=interval)
         return self._settled({"typed": len(text), "via": "keys"})
 
     def key(self, keys, direct=False):
@@ -446,6 +501,60 @@ class Computer:
             mx, my = self._scaler.to_model(cx, cy)
             matches.append({"text": word, "model": [mx, my], "conf": data["conf"][i]})
         return {"matches": matches, "count": len(matches)}
+
+    def locate_text(self, query, occurrence=1, whole=False):
+        """Model-space center of on-screen text matching `query`. Multi-word queries are
+        matched as a consecutive run of OCR words on one line (so 'Save copy' / 'Find all'
+        resolve), `occurrence` picks the Nth match in reading order, `whole` requires an
+        exact word match. Returns {found, model:[x,y], text, matches} (no clicking)."""
+        try:
+            import pytesseract
+        except Exception:
+            return {"found": False, "error": "pytesseract not installed"}
+        left, top, w, h = self._virtual_rect()
+        grab = self._sct.grab({"left": left, "top": top, "width": w, "height": h})
+        img = Image.frombytes("RGB", grab.size, grab.rgb)
+        try:
+            data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+        except Exception as e:
+            return {"found": False, "error": f"tesseract not available: {e}"}
+        words = []
+        for i in range(len(data["text"])):
+            if not data["text"][i].strip():
+                continue
+            words.append({"t": data["text"][i], "l": data["left"][i], "tp": data["top"][i],
+                          "w": data["width"][i], "h": data["height"][i],
+                          "key": (data["block_num"][i], data["par_num"][i], data["line_num"][i]),
+                          "wn": data["word_num"][i]})
+        cands = text_candidates(words, query, whole)
+        if not cands:
+            return {"found": False, "query": query, "matches": 0}
+        occ = min(max(1, int(occurrence)), len(cands))
+        _, _, box, text = cands[occ - 1]
+        mx, my = self._scaler.to_model((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+        return {"found": True, "model": [mx, my], "text": text, "matches": len(cands)}
+
+    def click_text(self, query, occurrence=1, button="left", clicks=1, whole=False,
+                   keys=None, direct=False):
+        """Find on-screen text and click its center — deterministic, no guessing pixel
+        coordinates from a screenshot. Resolves the crowded-toolbar / small-target problem."""
+        loc = self.locate_text(query, occurrence=occurrence, whole=whole)
+        if not loc.get("found"):
+            return {"clicked": False, **loc}
+        x, y = loc["model"]
+        r = self.click(x, y, button=button, clicks=clicks, keys=keys, direct=direct)
+        return {**r, "matched": loc["text"], "matches": loc["matches"], "model": [x, y]}
+
+    def hover(self, x, y, direct=False):
+        """Move to (x, y) and jiggle a pixel to emit a real OS mouse-move, so hover /
+        mouseenter handlers (tooltips, HUDs) fire even in web views where a bare SetCursorPos
+        doesn't dispatch a DOM mousemove."""
+        rx, ry = self._to_real(x, y)
+        be = self._backend(direct)
+        be.moveTo(rx, ry); time.sleep(0.03)
+        be.moveTo(rx + 1, ry + 1); time.sleep(0.02)
+        be.moveTo(rx, ry)
+        return self._settled({"hover": [x, y]})
 
     # --- misc --------------------------------------------------------------------------
     def wait(self, seconds=1.0):
