@@ -381,13 +381,32 @@ class Computer:
         be.typewrite(text, interval=interval)
         return self._settled({"typed": len(text), "via": "keys"})
 
-    def key(self, keys, direct=False):
-        """Press a chord. keys = 'enter' | 'ctrl+s' | ['ctrl','s'] | ['ctrl+a','delete']."""
+    def key(self, keys, strict: bool = False, direct: bool = False):
+        """Press a chord. keys = 'enter' | 'ctrl+s' | ['ctrl','s'] | ['ctrl+a','delete'].
+
+        Key names are case-insensitive and support common aliases:
+        cmd/command/meta/super → win, ctrl/control, option/opt/alt, fn/function.
+        Arrow keys accept aliases: leftarrow/arrowleft, etc.
+        Named keys: esc, space, backspace/delete, pgup/pgdn, f1-f20.
+
+        strict=True raises UnknownKeyError on unrecognized key names.
+        strict=False (default) falls back to the old inline parser for backward compat.
+        """
+        from .keys import parse_chord as _parse_chord, UnknownKeyError
         be = self._backend(direct)
         seq = keys if isinstance(keys, list) else [keys]
         out = []
         for chord in seq:
-            parts = [p.strip() for p in chord.replace("+", " ").split()] if isinstance(chord, str) else [chord]
+            if isinstance(chord, str):
+                try:
+                    parts = _parse_chord(chord)
+                except UnknownKeyError:
+                    if strict:
+                        raise
+                    # Fallback: old inline parser for backward compatibility
+                    parts = [p.strip() for p in chord.replace("+", " ").split()]
+            else:
+                parts = [chord]
             self._guard_keys(parts)
             be.hotkey(*parts) if len(parts) > 1 else be.press(parts[0])
             out.append(chord)
