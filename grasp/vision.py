@@ -1,18 +1,20 @@
-"""MiniMax VLM vision backend for Grasp.
+"""Vision backends for Grasp.
 
-Routes "look at the screen" to MiniMax's coding-plan vision service instead of
-the calling agent's (Claude) vision. Grasp captures the screenshot, MiniMax
-interprets it, and Grasp returns text / coordinates. The screenshot never enters
-the agent's context, so this costs ZERO Anthropic-subscription tokens and is off
-the 5h usage cap (MiniMax is a separate vendor on the user's coding plan).
+Two backends available — pick with GRASP_VLM_BACKEND env var:
 
-Pure stdlib (urllib) - no extra dependency. Key resolution never puts the secret
-in a prompt or commit:
+  minimax  (default) — cloud VLM via MiniMax API. Zero Anthropic tokens.
+  liquid             — on-device LFM2.5-VL-Extract via HuggingFace transformers.
+
+Both expose the same vlm(prompt, png_bytes) -> str interface so caller code
+(see, locate tools) works with either backend unchanged.
+
+Backend toggle:
+  GRASP_VLM_BACKEND=minimax|liquid   (default: minimax)
+
+MiniMax key resolution (unchanged):
   1. env MINIMAX_API_KEY
   2. env ANTHROPIC_AUTH_TOKEN
-  3. the ANTHROPIC_AUTH_TOKEN field of the Claude-NIM auth file
-     (default C:\\Users\\vinit\\Claude-NIM\\settings minimax auth.json;
-      override with env MINIMAX_AUTH_FILE).
+  3. Claude-NIM auth file (default C:\\Users\\vinit\\Claude-NIM\\settings minimax auth.json)
 """
 
 from __future__ import annotations
@@ -125,7 +127,7 @@ def _extract(j) -> str:
     return json.dumps(j, ensure_ascii=False)
 
 
-def vlm(prompt: str, png_bytes: bytes, *, timeout: float = 120.0) -> str:
+def _minimax_vlm(prompt: str, png_bytes: bytes, *, timeout: float = 120.0) -> str:
     """Send a PNG screenshot + prompt to MiniMax's vision service; return its text."""
     uri = "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
     headers = {"Authorization": f"Bearer {resolve_key()}",
@@ -133,3 +135,28 @@ def vlm(prompt: str, png_bytes: bytes, *, timeout: float = 120.0) -> str:
     j = _post(f"{BASE}{VLM_PATH}", {"prompt": prompt, "image_url": uri},
               headers, timeout=timeout)
     return strip_think(_extract(j))
+
+
+def _liquid_vlm(prompt: str, png_bytes: bytes, *, timeout: float = None) -> str:
+    """Send a PNG screenshot + prompt to Liquid on-device VLM; return its text."""
+    from .vision_liquid import vlm as _liquid_vlm_fn
+    return _liquid_vlm_fn(png_bytes, prompt)
+
+
+# ---------------------------------------------------------------------------
+# Active backend — selected by GRASP_VLM_BACKEND env var (default: minimax)
+# ---------------------------------------------------------------------------
+_BACKEND = os.environ.get("GRASP_VLM_BACKEND", "minimax").strip().lower()
+
+
+def vlm(prompt: str, png_bytes: bytes, *, timeout: float = 120.0) -> str:
+    """Send a PNG screenshot + prompt to the active VLM backend; return its text.
+    Backend chosen by GRASP_VLM_BACKEND env var (minimax | liquid)."""
+    if _BACKEND == "liquid":
+        return _liquid_vlm(prompt, png_bytes, timeout=timeout)
+    return _minimax_vlm(prompt, png_bytes, timeout=timeout)
+
+
+def active_backend() -> str:
+    """Return the name of the currently active VLM backend."""
+    return _BACKEND

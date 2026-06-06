@@ -97,15 +97,21 @@ def see(question: str):
     calling agent. Grasp captures the screen and an off-cap vision model (MiniMax)
     interprets it, so this costs no Anthropic tokens. Returns {answer, width, height}.
     Use this instead of screenshot() whenever you only need to KNOW something on screen."""
-    if not vision.is_available():
+    backend = vision.active_backend()
+    if backend == "minimax" and not vision.is_available():
         raise vision.VisionError(
             "MiniMax key not found; set MINIMAX_API_KEY or the Claude-NIM auth file.")
+    if backend == "liquid":
+        from . import vision_liquid
+        if not vision_liquid.is_available():
+            raise RuntimeError(
+                "Liquid backend deps missing. pip install transformers accelerate torch torchvision.")
     shot = pc().screenshot()
     png = base64.b64decode(shot["image_b64"])
     prompt = (f"You are looking at a {shot['width']}x{shot['height']} screenshot of a "
               f"computer screen. {question}")
     return {"answer": vision.vlm(prompt, png),
-            "width": shot["width"], "height": shot["height"]}
+            "width": shot["width"], "height": shot["height"], "backend": backend}
 
 
 @mcp.tool()
@@ -142,7 +148,7 @@ def locate(target: str):
     except Exception:
         pass
 
-    # Tier 3: off-cap MiniMax vision (last resort)
+    # Tier 3: off-cap VLM (MiniMax or Liquid, depending on active backend)
     if vision.is_available():
         prompt = (
             f"The image is a {w}x{h} pixel screenshot (origin top-left). "
@@ -151,7 +157,7 @@ def locate(target: str):
             f'CENTER of the best-matching clickable element, or {{"found": false}} if it is '
             f"not visible.")
         raw = vision.vlm(prompt, png)
-        return {"target": target, "method": "minimax", "width": w, "height": h,
+        return {"target": target, "method": f"vlm:{vision.active_backend()}", "width": w, "height": h,
                 **_parse_xy(raw, w, h)}
 
     return {"target": target, "found": False, "method": "none", "width": w, "height": h}
@@ -235,6 +241,46 @@ def read_screen(region: list | None = None):
     shot = pc().screenshot(tuple(region) if region else None)
     png = base64.b64decode(shot["image_b64"])
     return {"text": ground.ocr_text(png), "width": shot["width"], "height": shot["height"]}
+
+
+# --- Liquid VLM backend: structured extraction from images -----------------------------
+@mcp.tool()
+@tool
+def extract_from_image(image_path: str, fields_yaml: str):
+    """Extract structured fields from an image file using LFM2.5-VL-Extract (on-device).
+    Pass a YAML list of fields to extract. Returns JSON with those fields.
+    Uses GRASP_LIQUID_MODEL env var to pick model (default: LFM2.5-VL-450M-Extract).
+
+    Example fields_yaml:
+      color: dominant color in the image
+      count: number of visible objects
+      text: any text visible in the image"""
+    from . import vision_liquid
+    if not vision_liquid.is_available():
+        raise RuntimeError(
+            "Liquid backend not available. pip install transformers accelerate torch.")
+    with open(image_path, "rb") as _f:
+        png_bytes = _f.read()
+    # Quick header check — accept PNG or JPEG
+    if png_bytes[:4] not in (b"\x89PNG", b"\xff\xd8\xff") and png_bytes[:2] != b"\xff\xd8":
+        raise ValueError(f"{image_path} does not look like a PNG or JPEG image")
+    import logging
+    logging.getLogger("transformers").setLevel(logging.ERROR)
+    result = vision_liquid.extract(png_bytes, fields_yaml)
+    return {"json": result, "image": image_path,
+            "model": __import__("os").environ.get("GRASP_LIQUID_MODEL",
+                                                   "LiquidAI/LFM2.5-VL-450M-Extract")}
+
+
+@mcp.tool()
+@tool
+def vision_status():
+    """Show the active VLM backend and availability of each option.
+    Toggle with GRASP_VLM_BACKEND env var (minimax | liquid)."""
+    from . import vision_liquid
+    return {"active_backend": vision.active_backend(),
+            "minimax_available": vision.is_available(),
+            "liquid_available": vision_liquid.is_available()}
 
 
 # --- verify after acting (W2): wait for state instead of guessing -----------------------

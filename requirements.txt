@@ -15,3 +15,8 @@ pynput>=1.7                # macro_record_start/stop: capture real mouse + keybo
 pycaw>=20230407            # volume(): system audio endpoint (needs comtypes)
 comtypes>=1.2              # pycaw COM dependency
 screen-brightness-control>=0.16  # brightness()
+# optional: Liquid AI on-device VLM backend (LFM2.5-VL-Extract)
+transformers>=5.1.0        # Liquid model loading & inference
+accelerate>=1.0.0          # device_map="auto" for model loading
+torch>=2.0.0               # PyTorch backend (install torch-cpu for CPU-only)
+torchvision>=0.20.0        # required by Lfm2VlImageProcessor
