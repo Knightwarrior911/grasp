@@ -8,6 +8,9 @@ Two backends available — pick with GRASP_VLM_BACKEND env var:
 Both expose the same vlm(prompt, png_bytes) -> str interface so caller code
 (see, locate tools) works with either backend unchanged.
 
+The vlm() function auto-falls back to the other backend on failure, so the
+chosen backend is always tried first and the alternate is the safety net.
+
 Backend toggle:
   GRASP_VLM_BACKEND=minimax|liquid   (default: minimax)
 
@@ -151,10 +154,24 @@ _BACKEND = os.environ.get("GRASP_VLM_BACKEND", "minimax").strip().lower()
 
 def vlm(prompt: str, png_bytes: bytes, *, timeout: float = 120.0) -> str:
     """Send a PNG screenshot + prompt to the active VLM backend; return its text.
-    Backend chosen by GRASP_VLM_BACKEND env var (minimax | liquid)."""
+    Backend chosen by GRASP_VLM_BACKEND env var (minimax | liquid).
+    When primary backend fails, automatically falls back to the other backend."""
     if _BACKEND == "liquid":
-        return _liquid_vlm(prompt, png_bytes, timeout=timeout)
-    return _minimax_vlm(prompt, png_bytes, timeout=timeout)
+        try:
+            return _liquid_vlm(prompt, png_bytes, timeout=timeout)
+        except Exception as liquid_err:
+            try:
+                return _minimax_vlm(prompt, png_bytes, timeout=timeout)
+            except Exception:
+                raise liquid_err
+    # Primary: minimax; fallback: liquid
+    try:
+        return _minimax_vlm(prompt, png_bytes, timeout=timeout)
+    except Exception as minimax_err:
+        try:
+            return _liquid_vlm(prompt, png_bytes, timeout=timeout)
+        except Exception:
+            raise minimax_err
 
 
 def active_backend() -> str:

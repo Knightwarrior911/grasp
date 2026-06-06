@@ -94,9 +94,10 @@ def _parse_xy(raw: str, w: int, h: int):
 @tool
 def see(question: str):
     """Answer a question about the CURRENT screen WITHOUT sending the screenshot to the
-    calling agent. Grasp captures the screen and an off-cap vision model (MiniMax)
-    interprets it, so this costs no Anthropic tokens. Returns {answer, width, height}.
-    Use this instead of screenshot() whenever you only need to KNOW something on screen."""
+    calling agent. Grasp captures the screen and an off-cap vision model interprets it
+    (MiniMax primary, Liquid fallback), so this costs no Anthropic tokens. Returns
+    {answer, width, height, backend}. Use this instead of screenshot() whenever you
+    only need to KNOW something on screen."""
     backend = vision.active_backend()
     if backend == "minimax" and not vision.is_available():
         raise vision.VisionError(
