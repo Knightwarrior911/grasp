@@ -29,11 +29,16 @@ from typing import Optional
 log = logging.getLogger("grasp.vision_liquid")
 # Suppress noisy transformers/tokenizer warnings during inference
 logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore", message=".*clean_up_tokenization_spaces.*")
 warnings.filterwarnings("ignore", message=".*return_dict.*")
+warnings.filterwarnings("ignore", message=".*unauthenticated requests.*")
 
 _DEFAULT_MODEL = "LiquidAI/LFM2.5-VL-450M-Extract"
 _MODEL_ENV = "GRASP_LIQUID_MODEL"
+# Model sizes for reference:
+#   450M  -> LiquidAI/LFM2.5-VL-450M-Extract   (~1 GB RAM)
+#   1.6B  -> LiquidAI/LFM2.5-VL-1.6B-Extract   (~3.2 GB RAM, better quality)
 
 # Singleton _Vision instance (lazy-loaded)
 _instance: Optional["_Vision"] = None
@@ -104,8 +109,18 @@ class _Vision:
         # Move tensors to device
         inputs = {k: v.to(self.device) if hasattr(v, "to") else v for k, v in inputs.items()}
 
+        # Use EOS + custom stop to prevent repetition loops (common on CPU)
+        eos_id = self.processor.tokenizer.eos_token_id
+        bad_words = [[eos_id]] if eos_id else None
+
         with torch.no_grad():
-            outputs = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                repetition_penalty=1.2,
+                eos_token_id=eos_id,
+            )
 
         input_len = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
         response = self.processor.batch_decode(
@@ -115,21 +130,63 @@ class _Vision:
 
     def extract(self, png_bytes: bytes, fields_yaml: str) -> str:
         """Structured extraction: image + YAML fields → JSON string."""
+        import re
         from PIL import Image
 
         image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
         system_prompt = (
             f"Extract the following from the image:\n\n{fields_yaml}\n\n"
-            "Respond with only a JSON object. Do not include any text outside the JSON."
+            "Respond with only a valid JSON object. Do not include any text outside the JSON. "
+            "Keep values short — single words or short phrases only."
         )
-        return self._run(image, system_prompt)
+        raw = self._run(image, system_prompt, max_new_tokens=512)
+        # Post-process: extract clean JSON from response
+        return _clean_json(raw)
 
     def vlm(self, png_bytes: bytes, question: str) -> str:
         """General VLM: image + question → text answer (same interface as MiniMax)."""
         from PIL import Image
 
         image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-        return self._run(image, question)
+        # VLM: needs more tokens for descriptive answers
+        return self._run(image, question, max_new_tokens=1024)
+
+
+def _clean_json(raw: str) -> str:
+    """Extract clean JSON object from model output, removing hallucinated text."""
+    import re, json
+
+    # Try to find the first valid JSON object in the response
+    # Strategy 1: find {...} block
+    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', raw, re.DOTALL)
+    if match:
+        candidate = match.group(0)
+        try:
+            parsed = json.loads(candidate)
+            return json.dumps(parsed, ensure_ascii=False)
+        except json.JSONDecodeError:
+            pass
+
+    # Strategy 2: find any {...} even nested
+    depth = 0
+    start = -1
+    for i, ch in enumerate(raw):
+        if ch == '{':
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0 and start >= 0:
+                candidate = raw[start:i + 1]
+                try:
+                    parsed = json.loads(candidate)
+                    return json.dumps(parsed, ensure_ascii=False)
+                except json.JSONDecodeError:
+                    break
+
+    # Fallback: return raw cleaned up
+    return raw.strip()
 
 
 def _get() -> _Vision:

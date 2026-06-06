@@ -278,9 +278,20 @@ def vision_status():
     """Show the active VLM backend and availability of each option.
     Toggle with GRASP_VLM_BACKEND env var (minimax | liquid)."""
     from . import vision_liquid
+    import os
+    liquid_model = os.environ.get("GRASP_LIQUID_MODEL", "LiquidAI/LFM2.5-VL-450M-Extract")
     return {"active_backend": vision.active_backend(),
+            "liquid_model": liquid_model,
+            "liquid_models_available": {
+                "450M": "LiquidAI/LFM2.5-VL-450M-Extract",
+                "1.6B": "LiquidAI/LFM2.5-VL-1.6B-Extract",
+            },
             "minimax_available": vision.is_available(),
-            "liquid_available": vision_liquid.is_available()}
+            "liquid_available": vision_liquid.is_available(),
+            "how_to_switch": {
+                "backend": "set GRASP_VLM_BACKEND=liquid|minimax",
+                "model": "set GRASP_LIQUID_MODEL=LiquidAI/LFM2.5-VL-450M-Extract|LiquidAI/LFM2.5-VL-1.6B-Extract",
+            }}
 
 
 # --- verify after acting (W2): wait for state instead of guessing -----------------------
