@@ -279,7 +279,7 @@ def vision_status():
     Toggle with GRASP_VLM_BACKEND env var (minimax | liquid)."""
     from . import vision_liquid
     import os
-    liquid_model = os.environ.get("GRASP_LIQUID_MODEL", "LiquidAI/LFM2.5-VL-450M-Extract")
+    liquid_model = os.environ.get("GRASP_LIQUID_MODEL", "LiquidAI/LFM2.5-VL-1.6B-Extract")
     return {"active_backend": vision.active_backend(),
             "liquid_model": liquid_model,
             "liquid_models_available": {

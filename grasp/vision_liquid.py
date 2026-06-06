@@ -1,14 +1,14 @@
 """Liquid AI LFM2.5-VL-Extract vision backend for Grasp.
 
 On-device structured extraction from images. Complements (does not replace) the
-MiniMax VLM backend. Toggle with GRASP_VLM_BACKEND=liquid.
+MiniMax VLM backend. Toggle with GRASP_VLM_BACKEND.
 
 Model registry:
   450M  -> LiquidAI/LFM2.5-VL-450M-Extract   (~1 GB RAM, bfloat16)
-  1.6B  -> LiquidAI/LFM2.5-VL-1.6B-Extract   (~3.2 GB RAM, bfloat16)
+  1.6B  -> LiquidAI/LFM2.5-VL-1.6B-Extract   (~3.2 GB RAM, bfloat16) [DEFAULT]
 
 Env vars:
-  GRASP_LIQUID_MODEL   — override the HF model id (default: 450M)
+  GRASP_LIQUID_MODEL   — override the HF model id (default: 1.6B)
   GRASP_VLM_BACKEND    — "minimax" (default) | "liquid"
 
 Usage:
@@ -34,11 +34,8 @@ warnings.filterwarnings("ignore", message=".*clean_up_tokenization_spaces.*")
 warnings.filterwarnings("ignore", message=".*return_dict.*")
 warnings.filterwarnings("ignore", message=".*unauthenticated requests.*")
 
-_DEFAULT_MODEL = "LiquidAI/LFM2.5-VL-450M-Extract"
+_DEFAULT_MODEL = "LiquidAI/LFM2.5-VL-1.6B-Extract"
 _MODEL_ENV = "GRASP_LIQUID_MODEL"
-# Model sizes for reference:
-#   450M  -> LiquidAI/LFM2.5-VL-450M-Extract   (~1 GB RAM)
-#   1.6B  -> LiquidAI/LFM2.5-VL-1.6B-Extract   (~3.2 GB RAM, better quality)
 
 # Singleton _Vision instance (lazy-loaded)
 _instance: Optional["_Vision"] = None
