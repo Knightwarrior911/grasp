@@ -121,10 +121,13 @@ class UnknownKeyError(KeyError):
     def __init__(self, key: str, suggestions: list[str] | None = None) -> None:
         self.key: str = key
         self.suggestions: list[str] = suggestions or []
-        msg = f"Unknown key {key!r}."
+        self._msg = f"Unknown key {key!r}."
         if self.suggestions:
-            msg += f" Did you mean {', '.join(repr(s) for s in self.suggestions)}?"
-        super().__init__(msg)
+            self._msg += f" Did you mean {', '.join(repr(s) for s in self.suggestions)}?"
+        super().__init__(self._msg)
+
+    def __str__(self) -> str:
+        return self._msg
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +162,10 @@ def resolve(key: str) -> str:
 
     Raises :class:`UnknownKeyError` with suggestions if the key is not recognised.
     """
+    # Space is a valid single-char key but strip() would eat it — handle first
+    if key == " " or key.strip() == " ":
+        return " "
+
     low = key.strip().lower()
 
     # 1. Alias table
@@ -212,8 +219,15 @@ def parse_chord(chord: str) -> list[str]:
         >>> parse_chord("f1")
         ['f1']
     """
-    if not isinstance(chord, str) or not chord.strip():
-        raise UnknownKeyError(chord if isinstance(chord, str) else str(chord))
+    if not isinstance(chord, str):
+        raise UnknownKeyError(str(chord))
+    # Allow a bare space as a valid single-key chord
+    if chord != " " and not chord.strip():
+        raise UnknownKeyError(chord)
+
+    # Compact strips space chars within parts, so handle bare space before compact
+    if chord.strip() == " ":
+        return [resolve(chord)]
 
     compacted = compact(chord)
     parts = compacted.split("+")
