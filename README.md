@@ -116,7 +116,11 @@ mouse + keyboard input (model-space) into a replayable macro. Saved under
 · `mouse_down` · `mouse_up` · `drag` · `drag_path` (freeform) · `scroll` (direction+amount or raw dx/dy)
 
 **Type:** `type_text` (auto-paste for long text) · `key` (chords & sequences: `ctrl+s`,
-`['ctrl+a','delete']`) · `hold_key`
+`['ctrl+a','delete']`; aliases: `cmd`/`command`/`meta`/`super`→`win`, `ctrl`/`control`,
+`option`/`opt`/``alt`, `fn`/`function`; named keys: `esc`, `space`/`spacebar`,
+`backspace`/`delete`/`del`, arrow aliases, `pgup`/`pgdn`, `f1`-`f20`, `ins`/`insert`,
+`caps`/`capslock`, printscreen aliases, left/right variants; case-insensitive,
+whitespace-tolerant; `strict=True` for validation) · `hold_key`
 
 **System:** `open_app` · `run` (powershell/cmd, **destructive commands gated**) ·
 `get_active_window` · `list_windows` · `focus_window` · `clipboard_get` · `clipboard_set`
@@ -125,6 +129,32 @@ mouse + keyboard input (model-space) into a replayable macro. Saved under
 
 Every click/type takes optional held modifier `keys` and a `direct` SendInput flag. Click
 coordinates are optional — omit them to act at the current cursor position.
+
+## Key aliases
+
+The `key()` tool accepts human-readable chord strings. Names are case-insensitive and
+whitespace around `+` is ignored (``ctrl + shift + a`` works).
+
+**Modifiers:** ``cmd``/``command``/``meta``/``super`` → ``win`` · ``ctrl``/``control`` ·
+``option``/``opt``/``alt`` · ``shift`` · ``fn``/``function``
+
+**Left/right variants:** ``lctrl``/``rctrl`` · ``lshift``/``rshift`` · ``lalt``/``ralt`` ·
+``lwin``/``rwin``
+
+**Named keys:** ``return`` → ``enter`` · ``escape``/``esc`` · ``space``/``spacebar`` ·
+``delete`` → ``backspace`` · ``forwarddelete``/``del`` → forward-delete · ``tab``
+
+**Arrows:** ``leftarrow``/``arrowleft`` · ``rightarrow``/``arrowright`` ·
+``uparrow``/``arrowup`` · ``downarrow``/``arrowdown``
+
+**Navigation:** ``home`` · ``end`` · ``pageup``/``pgup`` · ``pagedown``/``pgdn``
+
+**Function keys:** ``f1``–``f20``
+
+**Other:** ``insert``/``ins`` · ``capslock``/``caps`` · ``numlock`` · ``scrolllock`` ·
+``pause`` · ``printscreen``/``prtsc``/``prtscr``/``prntscrn`` · ``menu``/``apps``
+
+Pass ``strict=True`` to raise on unrecognized key names (with "Did you mean?" suggestions).
 
 ## Watch-along (visible) mode
 
@@ -206,3 +236,7 @@ backend, safety gates, OCR fallback. Tested live on Windows 11 (Surface Pro 9, 2
 per-monitor-v2). Roadmap: structured UI-tree perception via UI Automation (so the agent can
 target controls by name, not just pixels), an in-loop screenshot diff to auto-detect "did my
 action do anything", and a record/replay action log.
+
+v0.2 (2026-06-06): keyStroke chord parser (`grasp/keys.py`) — 60+ key name aliases,
+case-insensitive/whitespace-tolerant chord parsing, `UnknownKeyError` with "Did you mean?"
+suggestions, 238 unit tests. Backward-compatible with fallback to old inline parser.
