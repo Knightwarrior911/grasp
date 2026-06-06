@@ -615,10 +615,14 @@ def type_text(text: str, interval: float = 0.022):
 
 @mcp.tool()
 @tool
-def key(keys, direct: bool = False):
+def key(keys, direct: bool = False, strict: bool = False):
     """Press a key chord. Accepts 'enter', 'ctrl+s', ['ctrl','a'], or a sequence
-    ['ctrl+a','delete']. Win+* chords are gated (use run() for launching)."""
-    return pc().key(keys, direct=direct)
+    ['ctrl+a','delete']. Key names are case-insensitive and support aliases:
+    cmd/command/meta/super → win, ctrl/control, option/opt/alt, fn/function.
+    Arrow keys accept aliases: leftarrow/arrowleft, etc. Named keys: esc, space,
+    backspace/delete, pgup/pgdn, f1-f20. Win+* chords are gated for safety.
+    strict=True raises on unrecognized key names with suggestions."""
+    return pc().key(keys, strict=strict, direct=direct)
 
 
 @mcp.tool()
